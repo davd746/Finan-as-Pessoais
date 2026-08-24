@@ -136,6 +136,41 @@
 
   <div id="toast" class="pointer-events-none fixed left-1/2 top-5 z-50 max-w-[90vw] -translate-x-1/2 -translate-y-24 rounded-2xl border border-emerald-400/20 bg-zinc-800 px-4 py-3 text-sm font-bold text-white opacity-0 shadow-2xl transition-all duration-300"></div>
 
+
+  <!-- Configuração do casal -->
+  <div id="householdOverlay" class="fixed inset-0 z-50 hidden items-end bg-black/70 p-4 backdrop-blur-sm sm:items-center">
+    <div class="mx-auto w-full max-w-md rounded-[2rem] border border-white/10 bg-zinc-900 p-6 shadow-2xl">
+      <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-400/10 text-xl">♥</div>
+      <h2 class="mt-5 text-2xl font-bold">Configurar o casal</h2>
+      <p class="mt-2 text-sm leading-relaxed text-zinc-400">Crie um casal para gerar um código ou entre usando o código recebido.</p>
+
+      <div class="mt-6 grid grid-cols-2 rounded-2xl bg-zinc-950 p-1">
+        <button type="button" data-setup="create" class="setup-tab rounded-xl bg-emerald-400 py-3 text-sm font-bold text-zinc-950">Criar casal</button>
+        <button type="button" data-setup="join" class="setup-tab rounded-xl py-3 text-sm font-bold text-zinc-500">Entrar</button>
+      </div>
+
+      <form id="createHouseholdForm" class="mt-5">
+        <label class="block">
+          <span class="mb-2 block text-xs font-semibold uppercase tracking-wider text-zinc-500">Nome</span>
+          <input id="householdName" type="text" maxlength="80" placeholder="David & Karol"
+            class="w-full rounded-2xl border border-white/10 bg-zinc-950 px-4 py-4 text-white outline-none focus:border-emerald-400/50" />
+        </label>
+        <button class="mt-3 w-full rounded-2xl bg-emerald-400 px-4 py-4 text-sm font-bold text-zinc-950">Criar casal</button>
+      </form>
+
+      <form id="joinHouseholdForm" class="mt-5 hidden">
+        <label class="block">
+          <span class="mb-2 block text-xs font-semibold uppercase tracking-wider text-zinc-500">Código do casal</span>
+          <input id="joinCode" required maxlength="6" autocomplete="off" placeholder="ABC123"
+            class="w-full rounded-2xl border border-white/10 bg-zinc-950 px-4 py-4 text-center text-xl font-black uppercase tracking-[.25em] text-white outline-none focus:border-emerald-400/50" />
+        </label>
+        <button class="mt-3 w-full rounded-2xl bg-emerald-400 px-4 py-4 text-sm font-bold text-zinc-950">Entrar no casal</button>
+      </form>
+
+      <p id="setupMessage" class="mt-3 text-center text-xs text-rose-300"></p>
+    </div>
+  </div>
+
   <!-- Login Supabase: só aparece depois de configurar URL e chave no script. -->
   <div id="authOverlay" class="fixed inset-0 z-50 hidden items-end bg-black/70 p-4 backdrop-blur-sm sm:items-center"><div class="mx-auto w-full max-w-md rounded-[2rem] border border-white/10 bg-zinc-900 p-6 shadow-2xl"><div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-400/10 text-xl">♥</div><h2 class="mt-5 text-2xl font-bold">Finanças a dois</h2><p class="mt-2 text-sm leading-relaxed text-zinc-400">Entre com seu e-mail. Vocês terão dados sincronizados e privados.</p><form id="authForm" class="mt-6"><input id="email" required type="email" placeholder="seu@email.com" class="w-full rounded-2xl border border-white/10 bg-zinc-950 px-4 py-4 text-white outline-none focus:border-emerald-400/50" /><button class="mt-3 w-full rounded-2xl bg-emerald-400 px-4 py-4 text-sm font-bold text-zinc-950">Enviar link de acesso</button></form><p id="authMessage" class="mt-3 text-center text-xs text-zinc-500"></p></div></div>
   
@@ -267,7 +302,7 @@
     return true; 
   } 
 
-  const { error } = await db.from('monthly_settings').upsert(row, { onConflict: 'month' }); 
+  const { error } = await db.from('monthly_settings').upsert(row, { onConflict: 'household_id,month' }); 
   if (error) { 
     showToast(error.message, true); 
     return false; 
@@ -282,9 +317,56 @@
     function cancelEditing() { editingId=null; document.getElementById('transactionForm').reset(); document.getElementById('transactionDate').value=selectedMonth===monthKey()?isoDate():`${selectedMonth}-01`; activeType='expense'; activeCategory='Mercado'; activePerson='David'; updateFormControls(); }
 
     async function initializeRemote() {
-      const {data:{session}} = await db.auth.getSession(); if (!session) { document.getElementById('authOverlay').classList.replace('hidden','flex'); return; }
-      state.user=session.user; const {data:membership} = await db.from('household_members').select('household_id,role,households(id,name,invite_code)').eq('user_id',session.user.id).maybeSingle(); if (!membership) { document.getElementById('householdOverlay').classList.replace('hidden','flex'); return; }
-      state.role=membership.role; state.household=membership.households; document.getElementById('profileButton').textContent=state.role.charAt(0); await fetchRemoteData(); realtimeChannel = db.channel(`juntos-${state.household.id}`).on('postgres_changes',{event:'*',schema:'public',table:'transactions',filter:`household_id=eq.${state.household.id}`},fetchRemoteData).on('postgres_changes',{event:'*',schema:'public',table:'monthly_settings',filter:`household_id=eq.${state.household.id}`},fetchRemoteData).subscribe();
+      const { data: { session }, error: sessionError } = await db.auth.getSession();
+      if (sessionError) {
+        showToast(sessionError.message, true);
+        return;
+      }
+      if (!session) {
+        document.getElementById('authOverlay').classList.replace('hidden','flex');
+        return;
+      }
+
+      state.user = session.user;
+
+      const { data: membership, error: membershipError } = await db
+        .from('household_members')
+        .select('household_id,role,households(id,name,invite_code)')
+        .eq('user_id', session.user.id)
+        .maybeSingle();
+
+      if (membershipError) {
+        console.error('Erro ao buscar casal:', membershipError);
+        showToast('Não foi possível carregar o casal. Confira as políticas SQL.', true);
+        return;
+      }
+
+      if (!membership) {
+        document.getElementById('householdOverlay').classList.replace('hidden','flex');
+        return;
+      }
+
+      state.role = membership.role;
+      state.household = membership.households;
+      document.getElementById('profileButton').textContent = state.role.charAt(0);
+      await fetchRemoteData();
+
+      realtimeChannel = db.channel(`juntos-${state.household.id}`)
+        .on('postgres_changes', {
+          event:'*',
+          schema:'public',
+          table:'transactions',
+          filter:`household_id=eq.${state.household.id}`
+        }, fetchRemoteData)
+        .on('postgres_changes', {
+          event:'*',
+          schema:'public',
+          table:'monthly_settings',
+          filter:`household_id=eq.${state.household.id}`
+        }, fetchRemoteData)
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') updateSyncStatus('SINCRONIZADO');
+        });
     }
 
     document.getElementById('transactionForm').addEventListener('submit', async event => { event.preventDefault(); const amount=parseMoney(document.getElementById('amount').value), description=document.getElementById('description').value.trim(), date=document.getElementById('transactionDate').value, wasEditing=Boolean(editingId); if(!amount || !description || !date) return showToast('Preencha valor, descrição e data.',true); updateSyncStatus('SALVANDO','zinc'); const success=await saveTransaction({description,amount,type:activeType,category:activeCategory,person:activePerson,date}); if(success) { selectedMonth=date.slice(0,7); cancelEditing(); renderAll(); updateSyncStatus(state.local?'SALVO LOCAL':'SINCRONIZADO'); showToast(wasEditing ? 'Lançamento atualizado!' : 'Lançamento salvo!'); } });
@@ -298,7 +380,7 @@
     document.getElementById('logout').addEventListener('click',async()=>{if(db){await db.auth.signOut();location.reload();}});
     document.getElementById('authForm').addEventListener('submit',async event=>{event.preventDefault();const email=document.getElementById('email').value;const {error}=await db.auth.signInWithOtp({email,options:{emailRedirectTo:location.href}});document.getElementById('authMessage').textContent=error?error.message:'Link enviado. Abra o e-mail neste mesmo aparelho.';});
     document.querySelectorAll('.setup-tab').forEach(btn=>btn.addEventListener('click',()=>{const creating=btn.dataset.setup==='create';document.getElementById('createHouseholdForm').classList.toggle('hidden',!creating);document.getElementById('joinHouseholdForm').classList.toggle('hidden',creating);document.querySelectorAll('.setup-tab').forEach(tab=>tab.className=`setup-tab rounded-xl py-3 text-sm font-bold ${tab===btn?'bg-emerald-400 text-zinc-950':'text-zinc-500'}`);}));
-    document.getElementById('createHouseholdForm').addEventListener('submit',async event=>{event.preventDefault();const {error}=await db.rpc('create_household',{p_name:document.getElementById('householdName').value || 'David & Karol'});if(error){document.getElementById('setupMessage').textContent=error.message;return;}location.reload();}); document.getElementById('joinHouseholdForm').addEventListener('submit',async event=>{event.preventDefault();const {error}=await db.rpc('join_household',{p_invite_code:document.getElementById('joinCode').value});if(error){document.getElementById('setupMessage').textContent=error.message;return;}location.reload();});
+    document.getElementById('createHouseholdForm').addEventListener('submit',async event=>{event.preventDefault();const message=document.getElementById('setupMessage');message.textContent='';const {data,error}=await db.rpc('create_household',{p_name:document.getElementById('householdName').value || 'David & Karol'});if(error){message.textContent=error.message;return;}if(!data?.[0]?.invite_code){message.textContent='Casal criado, mas o código não foi retornado. Recarregue a página.';return;}location.reload();}); document.getElementById('joinHouseholdForm').addEventListener('submit',async event=>{event.preventDefault();const message=document.getElementById('setupMessage');message.textContent='';const {data,error}=await db.rpc('join_household',{p_invite_code:document.getElementById('joinCode').value.trim().toUpperCase()});if(error){message.textContent=error.message;return;}if(!data){message.textContent='Não foi possível entrar no casal.';return;}location.reload();});
 
     (async function boot(){ document.getElementById('transactionDate').value=isoDate(); renderCategoryButtons(); updateFormControls(); showTab('home'); if(state.local){const data=loadLocal();state.transactions=data.transactions;state.monthlySettings=data.monthlySettings;updateSyncStatus('MODO LOCAL','zinc');renderAll();} else {await initializeRemote();} setInterval(()=>{if(selectedMonth!==monthKey() && new Date().getDate()===1) switchMonth(monthKey());},60000); })();
   </script>
