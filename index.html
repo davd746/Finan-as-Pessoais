@@ -18,11 +18,6 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script>
-  const SUPABASE_URL = 'https://cxhizxxwkixmqjmtbdzs.supabase.co';
-  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN4aGl6eHh3a2l4bXFqbXRiZHpzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc1ODEwMDMsImV4cCI6MjEwMzE1NzAwM30.oguNXMTxR0kBr-TOn03yqsNxnHjfUdxE03IFI2tG98w';
-  const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-</script>
   <style>
     * { -webkit-tap-highlight-color: transparent; }
     body { background: radial-gradient(circle at 50% -20%, rgba(16,185,129,.16), transparent 34rem), #09090b; }
@@ -151,8 +146,8 @@
       Supabase > Project Settings > API. A chave anon é pública por design;
       a segurança está nas políticas SQL do arquivo supabase-setup.sql.
     */
-    const SUPABASE_URL = 'COLE_AQUI_A_URL_DO_SUPABASE';
-    const SUPABASE_ANON_KEY = 'COLE_AQUI_A_CHAVE_ANON_DO_SUPABASE';
+    const SUPABASE_URL = 'https://cxhizxxwkixmqjmtbdzs.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN4aGl6eHh3a2l4bXFqbXRiZHpzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc1ODEwMDMsImV4cCI6MjEwMzE1NzAwM30.oguNXMTxR0kBr-TOn03yqsNxnHjfUdxE03IFI2tG98w';
     const LOCAL_KEY = 'juntos-financas-local-v3';
     const isSupabaseReady = SUPABASE_URL.startsWith('https://') && !SUPABASE_ANON_KEY.startsWith('COLE_');
     const db = isSupabaseReady ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
