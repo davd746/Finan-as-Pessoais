@@ -378,11 +378,87 @@
     document.getElementById('clearMonth').addEventListener('click',async()=>{const rows=selectedRealTransactions(); if(!rows.length)return; if(!confirm(`Apagar os ${rows.length} lançamentos de ${monthTitle()}? As rendas fixas não serão apagadas.`))return; if(state.local){state.transactions=state.transactions.filter(row=>!row.date.startsWith(selectedMonth));persistLocal();renderAll();}else{const {error}=await db.from('transactions').delete().eq('household_id',state.household.id).gte('date',monthStart()).lt('date',monthStart(shiftMonth(selectedMonth,1)));if(error)return showToast(error.message,true);await fetchRemoteData();}showToast('Lançamentos do mês removidos.');});
     document.getElementById('exportCsv').addEventListener('click',()=>{const head='Data,Descrição,Categoria,Responsável,Tipo,Valor\n';const lines=sortRows(monthlyRows()).map(row=>[row.date,`"${row.description.replaceAll('"','""')}"`,row.category,row.person,row.type,row.amount.toFixed(2)].join(','));const blob=new Blob([head+lines.join('\n')],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`extrato-${selectedMonth}.csv`;a.click();URL.revokeObjectURL(url);});
     document.getElementById('logout').addEventListener('click',async()=>{if(db){await db.auth.signOut();location.reload();}});
-    document.getElementById('authForm').addEventListener('submit',async event=>{event.preventDefault();const email=document.getElementById('email').value;const {error}=await db.auth.signInWithOtp({email,options:{emailRedirectTo:location.href}});document.getElementById('authMessage').textContent=error?error.message:'Link enviado. Abra o e-mail neste mesmo aparelho.';});
+    function getAppUrl() {
+      // Em um atalho/PWA do iPhone, location.href pode apontar para uma
+      // rota diferente. Usamos sempre a origem + caminho atual como destino.
+      return window.location.origin + window.location.pathname;
+    }
+
+    function finishAuthRedirect() {
+      if (!db) return;
+      const params = new URLSearchParams(window.location.search);
+      const hash = window.location.hash || '';
+      const hasAuthCallback = params.has('code') || params.has('token_hash') || hash.includes('access_token') || hash.includes('refresh_token');
+
+      // O Supabase JS processa automaticamente a sessão persistida.
+      // Se o e-mail abriu no Safari, recarregamos a página para garantir que
+      // a sessão seja restaurada antes de decidir se o login continua aberto.
+      if (hasAuthCallback) {
+        setTimeout(async () => {
+          const { data } = await db.auth.getSession();
+          if (data?.session) {
+            history.replaceState({}, document.title, window.location.pathname);
+            await initializeRemote();
+          }
+        }, 300);
+      }
+    }
+
+    document.getElementById('authForm').addEventListener('submit',async event=>{
+      event.preventDefault();
+      const email=document.getElementById('email').value.trim();
+      const message=document.getElementById('authMessage');
+      if(!email) return;
+
+      message.textContent='Enviando...';
+
+      const {error}=await db.auth.signInWithOtp({
+        email,
+        options:{
+          emailRedirectTo:getAppUrl(),
+          shouldCreateUser:true
+        }
+      });
+
+      message.textContent=error
+        ? error.message
+        : 'Link enviado. Abra o link no mesmo aparelho. Depois, volte ao Juntos pela Tela de Início.';
+    });
+
+    db?.auth.onAuthStateChange((event, session) => {
+      if (session) {
+        state.user = session.user;
+        document.getElementById('authOverlay').classList.add('hidden');
+      }
+    });
+
+    finishAuthRedirect();
     document.querySelectorAll('.setup-tab').forEach(btn=>btn.addEventListener('click',()=>{const creating=btn.dataset.setup==='create';document.getElementById('createHouseholdForm').classList.toggle('hidden',!creating);document.getElementById('joinHouseholdForm').classList.toggle('hidden',creating);document.querySelectorAll('.setup-tab').forEach(tab=>tab.className=`setup-tab rounded-xl py-3 text-sm font-bold ${tab===btn?'bg-emerald-400 text-zinc-950':'text-zinc-500'}`);}));
     document.getElementById('createHouseholdForm').addEventListener('submit',async event=>{event.preventDefault();const message=document.getElementById('setupMessage');message.textContent='';const {data,error}=await db.rpc('create_household',{p_name:document.getElementById('householdName').value || 'David & Karol'});if(error){message.textContent=error.message;return;}if(!data?.[0]?.invite_code){message.textContent='Casal criado, mas o código não foi retornado. Recarregue a página.';return;}location.reload();}); document.getElementById('joinHouseholdForm').addEventListener('submit',async event=>{event.preventDefault();const message=document.getElementById('setupMessage');message.textContent='';const {data,error}=await db.rpc('join_household',{p_invite_code:document.getElementById('joinCode').value.trim().toUpperCase()});if(error){message.textContent=error.message;return;}if(!data){message.textContent='Não foi possível entrar no casal.';return;}location.reload();});
 
-    (async function boot(){ document.getElementById('transactionDate').value=isoDate(); renderCategoryButtons(); updateFormControls(); showTab('home'); if(state.local){const data=loadLocal();state.transactions=data.transactions;state.monthlySettings=data.monthlySettings;updateSyncStatus('MODO LOCAL','zinc');renderAll();} else {await initializeRemote();} setInterval(()=>{if(selectedMonth!==monthKey() && new Date().getDate()===1) switchMonth(monthKey());},60000); })();
+    (async function boot(){
+      document.getElementById('transactionDate').value=isoDate();
+      renderCategoryButtons();
+      updateFormControls();
+      showTab('home');
+
+      if(state.local){
+        const data=loadLocal();
+        state.transactions=data.transactions;
+        state.monthlySettings=data.monthlySettings;
+        updateSyncStatus('MODO LOCAL','zinc');
+        renderAll();
+      } else {
+        // Dá alguns ms para o Supabase restaurar a sessão persistida,
+        // especialmente quando o app foi aberto pelo ícone da Tela de Início.
+        await new Promise(resolve => setTimeout(resolve, 150));
+        await initializeRemote();
+      }
+
+      setInterval(()=>{
+        if(selectedMonth!==monthKey() && new Date().getDate()===1) switchMonth(monthKey());
+      },60000);
+    })();
   </script>
 </body>
 </html>
