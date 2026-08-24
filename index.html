@@ -172,7 +172,21 @@
   </div>
 
   <!-- Login Supabase: só aparece depois de configurar URL e chave no script. -->
-  <div id="authOverlay" class="fixed inset-0 z-50 hidden items-end bg-black/70 p-4 backdrop-blur-sm sm:items-center"><div class="mx-auto w-full max-w-md rounded-[2rem] border border-white/10 bg-zinc-900 p-6 shadow-2xl"><div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-400/10 text-xl">♥</div><h2 class="mt-5 text-2xl font-bold">Finanças a dois</h2><p class="mt-2 text-sm leading-relaxed text-zinc-400">Entre com seu e-mail. Vocês terão dados sincronizados e privados.</p><form id="authForm" class="mt-6"><input id="email" required type="email" placeholder="seu@email.com" class="w-full rounded-2xl border border-white/10 bg-zinc-950 px-4 py-4 text-white outline-none focus:border-emerald-400/50" /><button class="mt-3 w-full rounded-2xl bg-emerald-400 px-4 py-4 text-sm font-bold text-zinc-950">Enviar link de acesso</button></form><p id="authMessage" class="mt-3 text-center text-xs text-zinc-500"></p></div></div>
+  <div id="authOverlay" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
+    <div class="w-full max-w-md rounded-[2rem] border border-white/10 bg-zinc-900 p-6 shadow-2xl">
+      <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-400/10 text-xl">♥</div>
+      <h2 class="mt-5 text-2xl font-bold">Entrar no Juntos</h2>
+      <p class="mt-2 text-sm leading-relaxed text-zinc-400">Entre uma vez com seu e-mail e senha. Depois disso, sua sessão fica salva neste aparelho.</p>
+      <form id="authForm" class="mt-6 space-y-3">
+        <input id="email" required type="email" autocomplete="username" placeholder="seu@email.com"
+          class="w-full rounded-2xl border border-white/10 bg-zinc-950 px-4 py-4 text-white outline-none focus:border-emerald-400/50" />
+        <input id="password" required type="password" minlength="6" autocomplete="current-password" placeholder="Sua senha"
+          class="w-full rounded-2xl border border-white/10 bg-zinc-950 px-4 py-4 text-white outline-none focus:border-emerald-400/50" />
+        <button type="submit" class="w-full rounded-2xl bg-emerald-400 px-4 py-4 text-sm font-bold text-zinc-950">Entrar</button>
+      </form>
+      <p id="authMessage" class="mt-3 text-center text-xs text-zinc-500"></p>
+    </div>
+  </div>
   
   <script>
     /*
@@ -323,7 +337,7 @@
         return;
       }
       if (!session) {
-        document.getElementById('authOverlay').classList.replace('hidden','flex');
+        document.getElementById('authOverlay').classList.remove('hidden');
         return;
       }
 
@@ -378,54 +392,39 @@
     document.getElementById('clearMonth').addEventListener('click',async()=>{const rows=selectedRealTransactions(); if(!rows.length)return; if(!confirm(`Apagar os ${rows.length} lançamentos de ${monthTitle()}? As rendas fixas não serão apagadas.`))return; if(state.local){state.transactions=state.transactions.filter(row=>!row.date.startsWith(selectedMonth));persistLocal();renderAll();}else{const {error}=await db.from('transactions').delete().eq('household_id',state.household.id).gte('date',monthStart()).lt('date',monthStart(shiftMonth(selectedMonth,1)));if(error)return showToast(error.message,true);await fetchRemoteData();}showToast('Lançamentos do mês removidos.');});
     document.getElementById('exportCsv').addEventListener('click',()=>{const head='Data,Descrição,Categoria,Responsável,Tipo,Valor\n';const lines=sortRows(monthlyRows()).map(row=>[row.date,`"${row.description.replaceAll('"','""')}"`,row.category,row.person,row.type,row.amount.toFixed(2)].join(','));const blob=new Blob([head+lines.join('\n')],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`extrato-${selectedMonth}.csv`;a.click();URL.revokeObjectURL(url);});
     document.getElementById('logout').addEventListener('click',async()=>{if(db){await db.auth.signOut();location.reload();}});
-    function getAppUrl() {
-      // Em um atalho/PWA do iPhone, location.href pode apontar para uma
-      // rota diferente. Usamos sempre a origem + caminho atual como destino.
-      return window.location.origin + window.location.pathname;
-    }
-
-    function finishAuthRedirect() {
-      if (!db) return;
-      const params = new URLSearchParams(window.location.search);
-      const hash = window.location.hash || '';
-      const hasAuthCallback = params.has('code') || params.has('token_hash') || hash.includes('access_token') || hash.includes('refresh_token');
-
-      // O Supabase JS processa automaticamente a sessão persistida.
-      // Se o e-mail abriu no Safari, recarregamos a página para garantir que
-      // a sessão seja restaurada antes de decidir se o login continua aberto.
-      if (hasAuthCallback) {
-        setTimeout(async () => {
-          const { data } = await db.auth.getSession();
-          if (data?.session) {
-            history.replaceState({}, document.title, window.location.pathname);
-            await initializeRemote();
-          }
-        }, 300);
-      }
-    }
-
-    document.getElementById('authForm').addEventListener('submit',async event=>{
+    // Login por e-mail + senha.
+    // Não usa Magic Link e não envia e-mails.
+    document.getElementById('authForm').addEventListener('submit', async event => {
       event.preventDefault();
-      const email=document.getElementById('email').value.trim();
-      const message=document.getElementById('authMessage');
-      if(!email) return;
 
-      message.textContent='Enviando...';
+      const email = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value;
+      const message = document.getElementById('authMessage');
 
-      const {error}=await db.auth.signInWithOtp({
+      message.textContent = 'Entrando...';
+
+      const { data, error } = await db.auth.signInWithPassword({
         email,
-        options:{
-          emailRedirectTo:getAppUrl(),
-          shouldCreateUser:true
-        }
+        password
       });
 
-      message.textContent=error
-        ? error.message
-        : 'Link enviado. Abra o link no mesmo aparelho. Depois, volte ao Juntos pela Tela de Início.';
+      if (error) {
+        console.error('Erro de login:', error);
+        message.textContent = error.message;
+        return;
+      }
+
+      if (!data?.session) {
+        message.textContent = 'Login realizado, mas a sessão não foi criada. Tente novamente.';
+        return;
+      }
+
+      state.user = data.user;
+      message.textContent = 'Login realizado. Carregando...';
+      await initializeRemote();
     });
 
-    db?.auth.onAuthStateChange((event, session) => {
+    db.auth.onAuthStateChange((event, session) => {
       if (session) {
         state.user = session.user;
         document.getElementById('authOverlay').classList.add('hidden');
