@@ -431,7 +431,6 @@
       }
     });
 
-    finishAuthRedirect();
     document.querySelectorAll('.setup-tab').forEach(btn=>btn.addEventListener('click',()=>{const creating=btn.dataset.setup==='create';document.getElementById('createHouseholdForm').classList.toggle('hidden',!creating);document.getElementById('joinHouseholdForm').classList.toggle('hidden',creating);document.querySelectorAll('.setup-tab').forEach(tab=>tab.className=`setup-tab rounded-xl py-3 text-sm font-bold ${tab===btn?'bg-emerald-400 text-zinc-950':'text-zinc-500'}`);}));
     document.getElementById('createHouseholdForm').addEventListener('submit',async event=>{event.preventDefault();const message=document.getElementById('setupMessage');message.textContent='';const {data,error}=await db.rpc('create_household',{p_name:document.getElementById('householdName').value || 'David & Karol'});if(error){message.textContent=error.message;return;}if(!data?.[0]?.invite_code){message.textContent='Casal criado, mas o código não foi retornado. Recarregue a página.';return;}location.reload();}); document.getElementById('joinHouseholdForm').addEventListener('submit',async event=>{event.preventDefault();const message=document.getElementById('setupMessage');message.textContent='';const {data,error}=await db.rpc('join_household',{p_invite_code:document.getElementById('joinCode').value.trim().toUpperCase()});if(error){message.textContent=error.message;return;}if(!data){message.textContent='Não foi possível entrar no casal.';return;}location.reload();});
 
