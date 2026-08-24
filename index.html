@@ -218,9 +218,63 @@
     function renderAll() { renderMonthHeader(); renderOverview(); renderHistory(); renderSettings(); if (!document.getElementById('dashboard').classList.contains('hidden')) setTimeout(renderCharts, 0); }
 
     async function fetchRemoteData() { if (!db || !state.household) return; updateSyncStatus('SINCRONIZANDO', 'zinc'); const [transactions, settings] = await Promise.all([db.from('transactions').select('*').eq('household_id', state.household.id), db.from('monthly_settings').select('*').eq('household_id', state.household.id)]); if (transactions.error || settings.error) { updateSyncStatus('ERRO', 'rose'); showToast('Não foi possível sincronizar agora.', true); return; } state.transactions = transactions.data || []; state.monthlySettings = settings.data || []; updateSyncStatus('SINCRONIZADO'); renderAll(); }
-    async function saveTransaction(row) { if (state.local) { if (editingId) state.transactions = state.transactions.map(item => item.id === editingId ? {...item,...row} : item); else state.transactions.push({ ...row, id:`local-${Date.now()}`, created_at:new Date().toISOString() }); persistLocal(); return true; } const payload = {...row, household_id:state.household.id, created_by:state.user.id}; const result = editingId ? await db.from('transactions').update(payload).eq('id', editingId) : await db.from('transactions').insert(payload); if (result.error) { showToast(result.error.message, true); return false; } await fetchRemoteData(); return true; }
+    async function saveTransaction(row) { 
+  if (state.local) { 
+    if (editingId) state.transactions = state.transactions.map(item => item.id === editingId ? {...item, ...row} : item); 
+    else state.transactions.push({ ...row, id: `local-${Date.now()}`, created_at: new Date().toISOString() }); 
+    persistLocal(); 
+    return true; 
+  } 
+
+  const payload = { 
+    ...row, 
+    created_by: state.user?.id 
+  }; 
+
+  if (state.household?.id && state.household.id !== 'local') {
+    payload.household_id = state.household.id;
+  }
+
+  const result = editingId 
+    ? await db.from('transactions').update(payload).eq('id', editingId) 
+    : await db.from('transactions').insert(payload); 
+
+  if (result.error) { 
+    showToast(result.error.message, true); 
+    return false; 
+  } 
+  await fetchRemoteData(); 
+  return true; 
+}
     async function removeTransaction(id) { if (state.local) { state.transactions = state.transactions.filter(row=>row.id !== id); persistLocal(); renderAll(); return; } const {error} = await db.from('transactions').delete().eq('id',id); if (error) return showToast(error.message,true); await fetchRemoteData(); }
-    async function saveSalary(David, Karol) { const row = { household_id: state.household?.id || 'local', month:monthStart(), david_salary:David, karol_salary:Karol }; if (state.local) { const index = state.monthlySettings.findIndex(item=>item.month === row.month); if(index>=0) state.monthlySettings[index] = row; else state.monthlySettings.push(row); persistLocal(); renderAll(); return true; } const {error} = await db.from('monthly_settings').upsert(row, {onConflict:'household_id,month'}); if (error) { showToast(error.message,true); return false; } await fetchRemoteData(); return true; }
+    async function saveSalary(David, Karol) { 
+  const row = { 
+    month: monthStart(), 
+    david_salary: David, 
+    karol_salary: Karol 
+  }; 
+
+  if (state.household?.id && state.household.id !== 'local') {
+    row.household_id = state.household.id;
+  }
+
+  if (state.local) { 
+    const index = state.monthlySettings.findIndex(item => item.month === row.month); 
+    if(index >= 0) state.monthlySettings[index] = row; 
+    else state.monthlySettings.push(row); 
+    persistLocal(); 
+    renderAll(); 
+    return true; 
+  } 
+
+  const { error } = await db.from('monthly_settings').upsert(row, { onConflict: 'month' }); 
+  if (error) { 
+    showToast(error.message, true); 
+    return false; 
+  } 
+  await fetchRemoteData(); 
+  return true; 
+}
 
     function switchMonth(next) { selectedMonth = next; document.getElementById('transactionDate').value = selectedMonth === monthKey() ? isoDate() : `${selectedMonth}-01`; renderAll(); }
     function showTab(tab) { const titles={home:'Lançamento rápido',dashboard:'Gráficos e análise',statement:'Extrato completo',settings:'Ajustes do casal'}; document.querySelectorAll('.screen').forEach(el=>el.classList.add('hidden')); document.getElementById(tab).classList.remove('hidden'); document.querySelectorAll('.nav-button').forEach(btn=>btn.className=`nav-button flex flex-col items-center gap-1 rounded-2xl py-2 text-xs font-bold ${btn.dataset.tab===tab ? 'bg-emerald-400/10 text-emerald-400' : 'text-zinc-500'}`); document.getElementById('headerTitle').textContent=titles[tab]; if(tab==='dashboard') setTimeout(renderCharts,30); if(tab==='statement') renderHistory(); if(tab==='settings') renderSettings(); }
